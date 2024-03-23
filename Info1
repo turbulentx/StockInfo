@@ -1,0 +1,416 @@
+import requests
+import bs4
+from datetime import datetime, timezone
+import PySimpleGUI as sg
+import yfinance as yf
+import re
+from finvizfinance.quote import finvizfinance
+import matplotlib.pyplot as plt
+
+# Define the font family
+font = ('Times New Roman', 12)
+
+
+class StockInfoApp:
+    def __init__(self):
+        sg.theme('Black')
+
+        # Define dark theme colors
+        dark_theme_bg = 'black'
+        dark_theme_fg = 'white'
+        dark_theme_outline = '#505050'
+        font = ('Times New Roman', 12)
+
+        # Ticker Frame
+        self.ticker_frame = sg.Column([
+            [sg.Text('Ticker:', text_color='white'),
+             sg.Input(key='-TICKER-', text_color='black', size=(6, None), background_color='white', enable_events=True),
+             sg.Button('Search', key='-SEARCH-', button_color=('white', 'green'))
+             ]
+        ], background_color=dark_theme_bg)
+
+        self.top_frame1 = sg.Column([[sg.Multiline(size=(40, 3), key='-f1-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
+        self.top_frame2 = sg.Column([[sg.Multiline(size=(42, 3), key='-f2-',pad=(8,0), background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
+        self.top_frame3 = sg.Column([[sg.Multiline(size=(40, 3), key='-f3-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
+
+
+        self.middle_left_frame = sg.Column([[sg.Multiline(size=(40, 20), key='-INFO-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
+        self.finviz_frame = sg.Column([[sg.Multiline(size=(30, 20), key='-FINVIZ-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, reroute_stdout=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
+        self.finviz_frame2 = sg.Column([[sg.Multiline(size=(10, 20), key='-FINVIZ2-',pad=(0, 0), background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, reroute_stdout=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
+        self.placeholder_frame = sg.Column([[sg.Multiline(size=(40, 20), key='-PLACEHOLDER-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, reroute_stdout=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
+
+        # Earnings Frame
+        self.earnings_frame = sg.Column([[sg.Multiline(size=(63, 10), key='-EARNINGS-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, reroute_stdout=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
+        self.earnings_frame2 = sg.Column([[sg.Multiline(size=(63, 10), key='-EARNINGS2-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, reroute_stdout=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
+
+        # Define the columns for the main layout
+        self.layout = [
+            [sg.Text('Stock Information', font=('Times New Roman', 12), text_color='white', background_color=dark_theme_bg)],
+            [self.ticker_frame],
+            [sg.Input("",key='Input1',visible=False)],
+            [sg.Input("",key='Input2',visible=False)],
+            [sg.Column([[self.top_frame1,self.top_frame2,self.top_frame3]], element_justification='stretch')],
+            [sg.Column([[self.middle_left_frame,self.finviz_frame,self.finviz_frame2, self.placeholder_frame]], element_justification='stretch')],
+            [sg.Column([[self.earnings_frame]], element_justification='stretch')]  # Removed self.earnings_frame2
+        ]
+
+        window_location = ((800,-997))
+        self.window = sg.Window('Stock Information', self.layout, grab_anywhere=True, finalize=True, location=window_location)
+        self.window['Input1'].bind("<Return>", "_Enter")
+        self.window['Input1'].bind("<\>", "_Focus")
+        # Hotkey to focus on the ticker input box
+        self.window.bind("<\>", '_Focus')
+        self.window.bind("<Return>", "_Enter")
+
+    def run(self):
+        while True:
+            event, values = self.window.read()
+            if event == sg.WINDOW_CLOSED:
+                break
+            elif event == '-SEARCH-' or event == "_Enter":
+                ticker = values['-TICKER-'].upper()
+                self.show_stock_info(ticker)
+                self.stocktwits_data = self.get_stocktwits_data(ticker)
+                if isinstance(self.stocktwits_data, dict):  # Check if data was retrieved successfully
+                    self.display_stocktwits_data(self.stocktwits_data)
+            elif event == '_Focus':
+                self.window['-TICKER-'].set_focus(True)
+
+    def show_stock_info(self, ticker):
+        self.window['-INFO-'].update('')
+        self.window['-EARNINGS-'].update('')
+        self.window['-FINVIZ-'].update('')
+
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            filtered_info = self.filter_info(info)
+
+            finviz_stock = finvizfinance(ticker.lower())
+            finviz_info = finviz_stock.ticker_fundament()
+
+            self.calculate_and_add_short_squeeze(filtered_info)
+            self.display_info(filtered_info)
+            self.display_finviz_info(finviz_info)
+
+            self.get_and_display_earnings_dates(ticker)
+            
+
+            margin_info = self.calculate_margin(float(filtered_info.get('dayLow', '0').replace('$', '').replace(',', '')))
+            self.display_margin_info(margin_info)
+
+        except Exception as e:
+            self.window['-INFO-'].print(f"Error fetching data: {e}")
+
+    def get_and_display_earnings_dates(self, ticker):
+
+        url = f'https://www.sec.gov/cgi-bin/browse-edgar?type=10-&dateb=&owner=include&count=100&action=getcompany&CIK={ticker}'
+        headerInfo = {'User-Agent': 'Mozilla/5.0'}
+        try:
+            response = requests.get(url, headers=headerInfo)
+            if response.status_code == 200:
+                soup = bs4.BeautifulSoup(response.text, 'html.parser')
+                trElems = soup.select('tr')
+                dateFind = re.compile(r'2\d{3}-\d{2}-\d{2}')
+                dates = []
+
+                for tr in trElems:
+                    tdElems = tr.select('td')
+                    if len(tdElems) == 5 and dateFind.search(tdElems[3].getText()) is not None:
+                        date = tdElems[3].getText()
+                        converted = datetime.strptime(date, '%Y-%m-%d').strftime('%m/%d/%Y')
+                        dates.append(converted)
+
+                if dates:
+                    earnings_data = []
+                    for date in dates:
+                        earnings_date = datetime.strptime(date, '%m/%d/%Y')
+                        earnings_date_formatted = earnings_date.strftime('%Y-%m-%d')
+                        try:
+                            earnings = yf.Ticker(ticker).history(start="2022-06-02", end="2022-06-03",interval="1h")
+                            if not earnings.empty:
+                                premarket_low = earnings['Low'].min()
+                                premarket_high = earnings['High'].max()
+                                earnings_data.append((date, premarket_low, premarket_high))
+                            else:
+                                earnings_data.append((date, 'N/A', 'N/A'))
+                        except (KeyError, ValueError):
+                            earnings_data.append((date, 'N/A', 'N/A'))
+
+                    self.display_earnings_info(earnings_data)
+                else:
+                    self.window['-EARNINGS-'].print(f"No earnings dates found for {ticker}.\n")
+            else:
+                self.window['-EARNINGS-'].print("Failed to retrieve earnings dates. SEC website might be down or the ticker symbol is incorrect.\n")
+        except requests.exceptions.RequestException as e:
+            self.window['-EARNINGS-'].print(f"Failed to retrieve earnings dates: {e}\n")
+    def display_earnings_info(self, earnings_data):
+        if earnings_data:
+            self.window['-EARNINGS-'].print("Earnings Dates and Pre-market Data:\n")
+            for date, premarket_low, premarket_high in earnings_data:
+                self.window['-EARNINGS-'].print(f"Date: {date}, Pre-market Low: {premarket_low}, Pre-market High: {premarket_high}\n")
+        else:
+            self.window['-EARNINGS-'].print("No earnings data available.\n")
+
+
+
+    def get_stocktwits_data(self, ticker):
+        try:
+            url = f"https://stocktwits.com/symbol/{ticker}"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
+            }
+            response = requests.get(url, headers=headers)
+            #print("StockTwits URL:", url)  # Add this line to print the URL being requested
+            #print("StockTwits Response Status Code:", response.status_code)  # Add this line to print the response status code
+            if response.status_code == 200:
+                soup = bs4.BeautifulSoup(response.text, 'html.parser')               
+
+
+                # Find the span containing the number of watchers
+                watchers_span = soup.find('span', class_='SymbolWatchers_watchers__SwKhP tabletSm-down|hidden inline-flex gap-1.5 items-center text-xs')
+
+
+                if watchers_span:
+                    # Remove the SVG element from the text
+                    svg = watchers_span.find('svg')
+                    if svg:
+                        svg.decompose()
+
+                    # Now get the text, which should be the number of watchers
+                    watchers_count = watchers_span.get_text(strip=True)
+                else:
+                    watchers_count = "Watchers count not found"
+
+                #print("Number of watchers:", watchers_count)
+
+                # Extract Sentiment
+                sentiment_div = soup.find('div', class_='CommunitySentimentMeterDetail_scoreIcon__OD7dM ')
+
+                sentiment_text = sentiment_div.get_text(strip=True) if sentiment_div else "Sentiment not found"
+              
+                # Extract Score
+                score_div = soup.find('div', class_='SymbolMetrics_score__mT_Ro block text-[13px] pt-0.5 text-white font-semibold')
+                score = score_div.get_text(strip=True) if score_div else "Score not found"
+
+                # Extract Message Volume
+                message_volume_div = soup.select_one('#symbol-metrics-row > div:nth-child(3) > div > div')
+                message_volume_text = message_volume_div.get_text(strip=True) if message_volume_div else "Message Volume not found"
+
+                #print("Sentiment:", sentiment_text)
+                #print("Score:", score)
+
+                
+                return {
+                    'Watchers': watchers_count,
+                    'Sentiment': sentiment_text,
+                    'Score': score,
+                    'Message Volume': message_volume_text
+                }
+            else:
+                return "Failed to retrieve StockTwits information."
+        except Exception as e:
+            return f"Error: {e}"
+
+        
+    def display_stocktwits_data(self, stocktwits_data):
+        #print("StockTwits Data:", stocktwits_data)  # Add this line to check if data is received
+
+        watchers = stocktwits_data.get('Watchers', 'Watchers count not found')
+        sentiment = stocktwits_data.get('Sentiment', 'Sentiment not found')
+        score = stocktwits_data.get('Score', 'Score not found')
+        message_volume = stocktwits_data.get('Message Volume', 'Message Volume not found')
+
+        info_text = f"Watchers: {watchers}\nSentiment: {sentiment}\nScore: {score}\nMessage Volume: {message_volume}"
+        
+        #print("Info Text:", info_text)  # Add this line to check if the info text is generated correctly
+
+        self.window['-f3-'].update(info_text)
+
+
+
+    def filter_info(self, info):
+        desired_keys = [
+            "country", #"marketCap"#,
+            "floatShares", "sharesShort", "heldPercentInsiders", "heldPercentInstitutions",
+            "shortPercentOfFloat","dayLow", "dayHigh", "exDividendDate",
+            "averageVolume", "averageVolume10days", "fiftyTwoWeekLow", "fiftyTwoWeekHigh",
+            "fiftyDayAverage", "twoHundredDayAverage", "sharesOutstanding",
+            "sharesShortPriorMonth", "sharesShortPreviousMonthDate", "dateShortInterest",
+            "sharesPercentSharesOut", 
+            "52WeekChange", "lastDividendValue", "lastDividendDate", "currentPrice",
+            "targetHighPrice", "targetLowPrice"
+        ]
+        
+        filtered_info = {key: self.format_value(key, info.get(key, 'N/A')) for key in desired_keys}
+        return filtered_info
+
+    def calculate_and_add_short_squeeze(self, info):
+        try:
+            shares_short = float(info.get('sharesShort', '0').replace(",", ""))
+            float_shares = float(info.get('sharesOutstanding', '0').replace(",", ""))
+            if float_shares > shares_short > 0:
+                short_squeeze_percentage = (shares_short / (float_shares - shares_short)) * 100
+                formatted_percentage = f"{short_squeeze_percentage:.2f}%"
+                info['shortSqueeze'] = formatted_percentage
+            else:
+                info['shortSqueeze'] = "N/A"
+        except Exception as e:
+            info['shortSqueeze'] = "Error Calculating"
+
+    def format_market_cap(self, market_cap):
+        if market_cap >= 10**12:
+            return f"${market_cap / 10**12:.2f}T"
+        elif market_cap >= 10**9:
+            return f"${market_cap / 10**9:.2f}B"
+        elif market_cap >= 10**6:
+            return f"${market_cap / 10**6:.2f}M"
+        else:
+            return f"${market_cap:.2f}"
+
+    def format_float_Shares(self, float_Shares):
+        if float_Shares >= 10**9:
+            return f"{float_Shares / 10**9:.2f}B"
+        elif float_Shares >= 10**6:
+            return f"{float_Shares / 10**6:.2f}M"
+        elif float_Shares >= 10**3:
+            return f"{float_Shares / 10**3:.2f}K"
+        else:
+            return f"{float_Shares:.2f}"
+
+    def format_shares_Short(self, shares_Short):
+        if shares_Short >= 10**9:
+            return f"{shares_Short / 10**9:.2f}B"
+        elif shares_Short >= 10**6:
+            return f"{shares_Short / 10**6:.2f}M"
+        elif shares_Short >= 10**3:
+            return f"{shares_Short / 10**3:.2f}K"
+        else:
+            return f"{shares_Short:.2f}"
+
+    def format_value(self, key, value):
+        formats = {
+            "marketCap": self.format_market_cap,
+            "dayLow": "${:.2f}".format,
+            "dayHigh": "${:.2f}".format,
+            "fiftyTwoWeekLow": "${:.2f}".format,
+            "fiftyTwoWeekHigh": "${:.2f}".format,
+            "fiftyDayAverage": "${:.2f}".format,
+            "twoHundredDayAverage": "${:.2f}".format,
+            "previousClose": "${:.2f}".format,
+            "volume": "{:,}".format,
+            "averageVolume": "{:,}".format,
+            "averageVolume10days": "{:,}".format,
+            "floatShares": self.format_float_Shares,
+            "sharesOutstanding": self.format_market_cap,
+            "sharesShort": self.format_market_cap,
+            "sharesShortPriorMonth": "{:,}".format,
+            "shortRatio": "{:.2f}".format,
+            "sharesPercentSharesOut": lambda x: "{:.2f}%".format(x * 100),
+            "heldPercentInsiders": lambda x: "{:.2f}%".format(x * 100),
+            "heldPercentInstitutions": lambda x: "{:.2f}%".format(x * 100),
+            "shortPercentOfFloat": lambda x: "{:.2f}%".format(x * 100),
+            "52WeekChange": lambda x: "{:.2f}%".format(x * 100),
+            "currentPrice": "${:.2f}".format,
+            "targetHighPrice": "${:.2f}".format,
+            "targetLowPrice": "${:.2f}".format,
+            "sharesShortPreviousMonthDate": self.format_date,
+            "dateShortInterest": self.format_date,
+        }
+        if key in formats:
+            return formats[key](value)
+        return value
+
+    def format_date(self, timestamp):
+        if timestamp:
+            return datetime.fromtimestamp(timestamp, timezone.utc).strftime('%Y-%m-%d')
+        else:
+            return 'N/A'
+
+    def display_info(self, info):
+        # Define keys and corresponding labels for plotting
+        plot_keys = ['fiftyTwoWeekLow', 'fiftyTwoWeekHigh']
+        plot_labels = ['52 Week Low', '52 Week High']
+
+        # Extract values for plotting
+        plot_values = [info.get(key, 0) for key in plot_keys]
+
+        # Format values for plotting
+        plot_values = [float(value.replace('$', '').replace(',', '')) for value in plot_values]
+
+        # Plot the data horizontally
+        plt.figure(figsize=(8, 4))
+        plt.barh(plot_labels, plot_values, color=['blue', 'red'])
+        plt.title('52 Week Low vs High')
+        plt.ylabel('Price')
+        plt.xlabel('Value ($)')
+        plt.grid(True)
+
+        for i, value in enumerate(plot_values):
+            plt.text(value, i, f'${value:.2f}', va='center', ha='left')
+
+        plt.show()
+
+        label_mapping = {
+        "fiftyTwoWeekLow": "52W Low",
+        "fiftyTwoWeekHigh": "52W High",
+        "heldPercentInsiders": "Insiders",
+        "averageVolume10days": "Avg Vol 10 day",
+        "twoHundredDayAverage": "200 Day Avg.",
+        "heldPercentInstitutions":"Institutions",
+        "sharesShortPriorMonth":"Prev Share Short",
+        "sharesShortPreviousMonthDate":"Date of Short",
+        "fiftyTwoWeekLow":"52W Low",
+        "fiftyTwoWeekHigh":"52W High",
+        "twoHundredDayAverage":"200 Day Avg",
+        "sharesPercentSharesOut":"%of Shares Out",
+        "shortPercentOfFloat":"Short Float",
+        "fiftyDayAverage":"50 Day Avg",
+    }
+
+        max_key_length = max(len(label_mapping.get(key, key)) for key in info.keys())
+
+        for key, value in info.items():
+            padding = max_key_length - len(label_mapping.get(key, key))
+            formatted_key = f"{label_mapping.get(key, key)}{' ' * padding}:"
+            if key == "country":
+                self.window['-FINVIZ-'].print(f"{formatted_key} {value}", font=('Times New Roman', 12))
+            else:
+                self.window['-INFO-'].print(f"{formatted_key} {value}", font=('Times New Roman', 12))
+
+
+    def display_finviz_info(self, finviz_info):
+        max_key_length = max(len(key) for key in ['Market Cap', 'Short Float', 'Shs Float'])
+        for key in ['Market Cap', 'Short Float', 'Shs Float']:
+            padding = max_key_length - len(key)
+            formatted_value = finviz_info.get(key, 'N/A')
+            formatted_line = f"{key}{' ' * padding}: {formatted_value}"
+            self.window['-FINVIZ-'].print(formatted_line, font=('Times New Roman', 12))
+
+    def calculate_margin(self, lowest_price):
+        if lowest_price > 16.67:
+            margin_percentage = 30
+        elif lowest_price > 5:
+            margin_percentage = (((1000 / lowest_price) * 5) / 1000) * 100
+        elif lowest_price >= 2.5:
+            margin_percentage = 100
+        else:
+            margin_percentage = (((1000 / lowest_price) * 2.5) / 1000) * 100
+
+        margin_amount = (1000 * margin_percentage) / 100
+        margin_amount_rounded = round(margin_amount)  # Round to the nearest whole dollar
+        return f"{margin_percentage:.2f}% (${margin_amount_rounded})"  # Return the rounded value
+
+    def display_margin_info(self, margin_info):
+        self.window['-FINVIZ-'].print(f"Margin Requirement: {margin_info}", font=('Times New Roman', 12))
+
+if __name__ == "__main__":
+    app = StockInfoApp()
+    app.run()
+
+
