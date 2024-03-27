@@ -10,9 +10,29 @@ import numpy as np
 import io
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+theme_dict = {'BACKGROUND': '#2B475D',
+                'TEXT': '#FFFFFF',
+                'INPUT': '#F2EFE8',
+                'TEXT_INPUT': '#000000',
+                'SCROLL': '#F2EFE8',
+                'BUTTON': ('#000000', '#C2D4D8'),
+                'PROGRESS': ('#FFFFFF', '#C7D5E0'),
+                'BORDER': 0,'SLIDER_DEPTH': 0, 'PROGRESS_DEPTH': 0}
 
-# Define the font family
+BORDER_COLOR = '#C7D5E0'
+DARK_HEADER_COLOR = '#1B2838'
+BPAD_TOP = ((10,10), (10, 10))
+BPAD_LEFT = ((10,10), (0, 0))
+BPAD_LEFT_INSIDE = (0, (10, 0))
+BPAD_RIGHT = ((10,10), (10, 0))
+
 font = ('Times New Roman', 12)
+
+dark_theme_bg = 'black'
+dark_theme_fg = 'white'
+dark_theme_outline = '#505050'
+
+
 
 
 class StockInfoApp:
@@ -23,7 +43,6 @@ class StockInfoApp:
         dark_theme_bg = 'black'
         dark_theme_fg = 'white'
         dark_theme_outline = '#505050'
-        font = ('Times New Roman', 12)
 
         # Ticker Frame
         self.ticker_frame = sg.Column([
@@ -80,6 +99,7 @@ class StockInfoApp:
                     self.display_stocktwits_data(self.stocktwits_data)
             elif event == '_Focus':
                 self.window['-TICKER-'].set_focus(True)
+                
 
     def show_stock_info(self, ticker):
         self.window['-INFO-'].update('')
@@ -383,20 +403,20 @@ class StockInfoApp:
         #plt.show()
 
         label_mapping = {
-        "fiftyTwoWeekLow": "52W Low",
-        "fiftyTwoWeekHigh": "52W High",
-        "heldPercentInsiders": "Insiders",
-        "averageVolume10days": "Avg Vol 10 day",
-        "twoHundredDayAverage": "200 Day Avg.",
-        "heldPercentInstitutions":"Institutions",
-        "sharesShortPriorMonth":"Prev Share Short",
-        "sharesShortPreviousMonthDate":"Date of Short",
-        "fiftyTwoWeekLow":"52W Low",
-        "fiftyTwoWeekHigh":"52W High",
-        "twoHundredDayAverage":"200 Day Avg",
-        "sharesPercentSharesOut":"%of Shares Out",
-        "shortPercentOfFloat":"Short Float",
-        "fiftyDayAverage":"50 Day Avg",
+            "fiftyTwoWeekLow": "52W Low",
+            "fiftyTwoWeekHigh": "52W High",
+            "heldPercentInsiders": "Insiders",
+            "averageVolume10days": "Avg Vol 10 day",
+            "twoHundredDayAverage": "200 Day Avg.",
+            "heldPercentInstitutions":"Institutions",
+            "sharesShortPriorMonth":"Prev Share Short",
+            "sharesShortPreviousMonthDate":"Date of Short",
+            "fiftyTwoWeekLow":"52W Low",
+            "fiftyTwoWeekHigh":"52W High",
+            "twoHundredDayAverage":"200 Day Avg",
+            "sharesPercentSharesOut":"%of Shares Out",
+            "shortPercentOfFloat":"Short Float",
+            "fiftyDayAverage":"50 Day Avg",
     }
 
         max_key_length = max(len(label_mapping.get(key, key)) for key in info.keys())
@@ -408,7 +428,6 @@ class StockInfoApp:
                 self.window['-FINVIZ-'].print(f"{formatted_key} {value}", font=('Times New Roman', 12))
             else:
                 self.window['-INFO-'].print(f"{formatted_key} {value}", font=('Times New Roman', 12))
-
 
 
         # The actual data points
@@ -447,6 +466,8 @@ class StockInfoApp:
         image = sg.Image(data=buf.getvalue(), key='-PLOT-')
         self.window['-PLOT-'].update(data=buf.getvalue())
 
+
+
     def display_finviz_info(self, finviz_info):
         max_key_length = max(len(key) for key in ['Market Cap', 'Short Float', 'Shs Float'])
         for key in ['Market Cap', 'Short Float', 'Shs Float']:
@@ -470,10 +491,17 @@ class StockInfoApp:
         return f"{margin_percentage:.2f}% (${margin_amount_rounded})"  # Return the rounded value
 
     def display_margin_info(self, margin_info):
-        self.window['-FINVIZ-'].print(f"Margin Requirement: {margin_info}", font=('Times New Roman', 12))
+        margin_percentage = float(margin_info.split('%')[0])  # Extract the percentage value
+        # Check if the margin percentage is greater than 50
+        if margin_percentage > 50:
+            text_color = 'yellow'
+        else:
+            text_color = 'white'  # or any other default color
+    
+        # Print the margin info with the appropriate text color
+        self.window['-FINVIZ-'].print(f"Margin Requirement: {margin_info}", text_color=text_color, font=('Times New Roman', 12))
+
 
 if __name__ == "__main__":
     app = StockInfoApp()
     app.run()
-
-
