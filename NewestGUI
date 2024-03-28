@@ -379,29 +379,31 @@ class StockInfoApp:
             return 'N/A'
 
     def display_info(self, info):
-        # Define keys and corresponding labels for plotting
-        plot_keys = ['fiftyTwoWeekLow', 'fiftyTwoWeekHigh']
-        plot_labels = ['52 Week Low', '52 Week High']
+        # Extract 52-week low and high values
+        #low_value = float(info.get('fiftyTwoWeekLow', '0').replace('$', '').replace(',', ''))
+        #high_value = float(info.get('fiftyTwoWeekHigh', '0').replace('$', '').replace(',', ''))
 
-        # Extract values for plotting
-        plot_values = [info.get(key, 0) for key in plot_keys]
-
-        # Format values for plotting
-        plot_values = [float(value.replace('$', '').replace(',', '')) for value in plot_values]
-
-        # Plot the data horizontally
-        plt.figure(figsize=(8, 4))
-        plt.barh(plot_labels, plot_values, color=['blue', 'red'])
-        plt.title('52 Week Low vs High')
-        plt.ylabel('Price')
-        plt.xlabel('Value ($)')
-        plt.grid(True)
-
-        for i, value in enumerate(plot_values):
-            plt.text(value, i, f'${value:.2f}', va='center', ha='left')
-
+        # Plot the data
+        #plt.figure(figsize=(4, 4))
+        
+        # Plot the main bar representing the range
+        #plt.barh(0, high_value - low_value, left=low_value, height=0.3, color='blue', alpha=0.5)
+        
+        # Plot the horizontal line for the low value
+        #plt.plot([low_value, low_value], [-0.1, 0.1], color='blue', linewidth=2)
+        
+        # Plot the horizontal line for the high value
+        #plt.plot([high_value, high_value], [-0.1, 0.1], color='blue', linewidth=2)
+        
+        #plt.title('52 Week Low vs High')
+        #plt.xlabel('Price ($)')
+        #plt.yticks([])  # Hide y-axis
+        #plt.gca().spines['left'].set_visible(False)  # Hide left spine
+        #plt.gca().spines['bottom'].set_visible(False)  # Hide bottom spine
+        #plt.gca().spines['right'].set_visible(False)  # Hide right spine
+        #plt.gca().spines['top'].set_visible(False)  # Hide top spine
         #plt.show()
-
+           
         label_mapping = {
             "fiftyTwoWeekLow": "52W Low",
             "fiftyTwoWeekHigh": "52W High",
@@ -425,10 +427,16 @@ class StockInfoApp:
             padding = max_key_length - len(label_mapping.get(key, key))
             formatted_key = f"{label_mapping.get(key, key)}{' ' * padding}:"
             if key == "country":
-                self.window['-FINVIZ-'].print(f"{formatted_key} {value}", font=('Times New Roman', 12))
+                if value == 'United States':
+                    text_color1 = 'green'
+                elif value == "China":
+                    text_color1 = 'red'
+                else:
+                    text_color1 = 'yellow'
+                # Print the formatted text with the specified text color
+                self.window['-FINVIZ-'].print(f"{formatted_key} {value}", text_color=text_color1, font=('Times New Roman', 12))
             else:
                 self.window['-INFO-'].print(f"{formatted_key} {value}", font=('Times New Roman', 12))
-
 
         # The actual data points
         info = {'52W Low': '$7.85', '52W High': '$20.82', '50 Day Avg': '$15.28', 'dayLow': '$19.50', 'dayHigh': '$20.40', 'currentPrice': '$19.52', 'targetHighPrice': '$23.00', 'targetLowPrice': '$7.00'}
@@ -469,12 +477,29 @@ class StockInfoApp:
 
 
     def display_finviz_info(self, finviz_info):
-        max_key_length = max(len(key) for key in ['Market Cap', 'Short Float', 'Shs Float'])
-        for key in ['Market Cap', 'Short Float', 'Shs Float']:
-            padding = max_key_length - len(key)
+        keys_to_display = ['Market Cap', 'Short Float', 'Shs Float']
+        max_key_length = max(len(key) for key in keys_to_display)
+
+        for key in keys_to_display:
             formatted_value = finviz_info.get(key, 'N/A')
-            formatted_line = f"{key}{' ' * padding}: {formatted_value}"
-            self.window['-FINVIZ-'].print(formatted_line, font=('Times New Roman', 12))
+            padding = max_key_length - len(key)
+            formatted_line = f"{key}{' ' * padding}:{formatted_value}"
+            
+            # Determine text color based on the Short Float percentage value
+            if key == 'Short Float' and '%' in formatted_value:
+                short_float_percentage = float(formatted_value.split('%')[0])
+                if short_float_percentage > 10:
+                    text_color3 = 'red'
+                elif 6 <= short_float_percentage <= 10:
+                    text_color3 = 'yellow'
+                else:
+                    text_color3 = 'green'
+            else:
+                text_color3 = 'white'  # Default color
+            
+            # Print the line with the appropriate text color
+            self.window['-FINVIZ-'].print(formatted_line, text_color=text_color3, font=('Times New Roman', 12))
+
 
     def calculate_margin(self, lowest_price):
         if lowest_price > 16.67:
@@ -494,12 +519,12 @@ class StockInfoApp:
         margin_percentage = float(margin_info.split('%')[0])  # Extract the percentage value
         # Check if the margin percentage is greater than 50
         if margin_percentage > 50:
-            text_color = 'yellow'
+            text_color2 = 'yellow'
         else:
-            text_color = 'white'  # or any other default color
+            text_color2 = 'white'  # or any other default color
     
         # Print the margin info with the appropriate text color
-        self.window['-FINVIZ-'].print(f"Margin Requirement: {margin_info}", text_color=text_color, font=('Times New Roman', 12))
+        self.window['-FINVIZ-'].print(f"Margin Req: {margin_info}", text_color=text_color2, font=('Times New Roman', 12))
 
 
 if __name__ == "__main__":
