@@ -1,6 +1,6 @@
 import requests
 import bs4
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import PySimpleGUI as sg
 import yfinance as yf
 import re
@@ -58,7 +58,7 @@ class StockInfoApp:
         self.top_frame3 = sg.Column([[sg.Multiline(size=(40, 3), key='-f3-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
 
 
-        self.middle_left_frame = sg.Column([[sg.Multiline(size=(40, 20), key='-INFO-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
+        self.middle_left_frame = sg.Column([[sg.Multiline(size=(40, 20), key='-INFO-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, reroute_stdout=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
         self.finviz_frame = sg.Column([[sg.Multiline(size=(30, 20), key='-FINVIZ-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, reroute_stdout=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
         self.finviz_frame2 = sg.Column([[sg.Multiline(size=(10, 20), key='-FINVIZ2-',pad=(0, 0), background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, reroute_stdout=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
         self.placeholder_frame = sg.Column([[sg.Multiline(size=(40, 20), key='-PLACEHOLDER-', background_color=dark_theme_bg, text_color=dark_theme_fg, auto_refresh=True, reroute_stdout=True, disabled=True, no_scrollbar=True)]], background_color=dark_theme_bg)
@@ -175,6 +175,8 @@ class StockInfoApp:
 
             
     def get_and_display_earnings_dates(self, ticker):
+        start_date = (datetime.today() - timedelta(days=365 * 2)).strftime('%Y-%m-%d')
+        max_allowed_date = (datetime.today() - timedelta(days=365 * 2)).strftime('%Y-%m-%d')  # Two years ago
 
         url = f'https://www.sec.gov/cgi-bin/browse-edgar?type=10-&dateb=&owner=include&count=100&action=getcompany&CIK={ticker}'
         headerInfo = {'User-Agent': 'Mozilla/5.0'}
@@ -185,6 +187,9 @@ class StockInfoApp:
                 trElems = soup.select('tr')
                 dateFind = re.compile(r'2\d{3}-\d{2}-\d{2}')
                 dates = []
+
+                # Initialize end_date here
+                end_date = start_date
 
                 for tr in trElems:
                     tdElems = tr.select('td')
@@ -197,9 +202,15 @@ class StockInfoApp:
                     earnings_data = []
                     for date in dates:
                         earnings_date = datetime.strptime(date, '%m/%d/%Y')
+                        if earnings_date < datetime.strptime(max_allowed_date, '%Y-%m-%d'):
+                            continue  # Skip dates older than 2 years
                         earnings_date_formatted = earnings_date.strftime('%Y-%m-%d')
                         try:
-                            earnings = yf.Ticker(ticker).history(start="2022-06-02", end="2022-06-03",interval="1h")
+                            start_date = min(start_date, end_date)
+                            end_date = (earnings_date + timedelta(days=1)).strftime('%Y-%m-%d')
+                            if datetime.strptime(end_date, '%Y-%m-%d') > datetime.today():
+                                end_date = datetime.today().strftime('%Y-%m-%d')
+                            earnings = yf.Ticker(ticker).history(start=start_date, end=end_date, interval="1d")
                             if not earnings.empty:
                                 premarket_low = earnings['Low'].min()
                                 premarket_high = earnings['High'].max()
@@ -216,6 +227,7 @@ class StockInfoApp:
                 self.window['-EARNINGS-'].print("Failed to retrieve earnings dates. SEC website might be down or the ticker symbol is incorrect.\n")
         except requests.exceptions.RequestException as e:
             self.window['-EARNINGS-'].print(f"Failed to retrieve earnings dates: {e}\n")
+
 
     def display_earnings_info(self, earnings_data):
         if earnings_data:
@@ -428,7 +440,7 @@ class StockInfoApp:
             formatted_key = f"{label_mapping.get(key, key)}{' ' * padding}:"
             if key == "country":
                 if value == 'United States':
-                    text_color1 = 'green'
+                    text_color1 = 'limegreen'
                 elif value == "China":
                     text_color1 = 'red'
                 else:
@@ -493,7 +505,7 @@ class StockInfoApp:
                 elif 6 <= short_float_percentage <= 10:
                     text_color3 = 'yellow'
                 else:
-                    text_color3 = 'green'
+                    text_color3 = 'limegreen'
             else:
                 text_color3 = 'white'  # Default color
             
